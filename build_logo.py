@@ -5,8 +5,23 @@ Uses the full 779-point contour (skimage.find_contours) in native pixel
 coordinates of the target (260×280), drawn at 4× scale then downsampled.
 """
 from PIL import Image, ImageDraw
+import numpy as np
+from scipy.interpolate import CubicSpline
 
 W, H = 260, 280
+
+def smooth_contour(pts, n_out=1200):
+    """Return a smoothed closed curve through pts via periodic cubic spline."""
+    pts = np.array(pts, dtype=float)
+    # Cumulative chord length as parameter
+    d = [0.0]
+    for i in range(1, len(pts)):
+        d.append(d[-1] + max(np.linalg.norm(pts[i] - pts[i-1]), 1e-9))
+    d = np.array(d)
+    csx = CubicSpline(d, pts[:, 0], bc_type='periodic')
+    csy = CubicSpline(d, pts[:, 1], bc_type='periodic')
+    t = np.linspace(0, d[-1], n_out, endpoint=False)
+    return list(zip(csx(t).tolist(), csy(t).tolist()))
 
 # Full contour in (col, row) pixel coords of the 260×280 target image.
 # Extracted via skimage.measure.find_contours on the plane-ink mask.
@@ -227,14 +242,13 @@ C4 = [
     (155.5,160.0),(155.0,160.5),
 ]
 
-SCALE = 4
+SCALE = 8   # higher scale → smoother anti-aliased edges after downsampling
 img_big = Image.new('L', (W * SCALE, H * SCALE), 255)
 draw = ImageDraw.Draw(img_big)
 for contour in [CONTOUR, C1, C4]:
-    scaled = [(c * SCALE, r * SCALE) for c, r in contour]
+    smoothed = smooth_contour(contour)
+    scaled = [(c * SCALE, r * SCALE) for c, r in smoothed]
     draw.polygon(scaled, fill=0)
-# Single-pixel component 3 at (col=159, row=141)
-draw.point((159 * SCALE, 141 * SCALE), fill=0)
 
 img_out = img_big.resize((W, H), Image.LANCZOS).convert('RGB')
 out = '/home/user/Claude-Testing/logo.png'
