@@ -1,0 +1,11 @@
+# Orbital Tension
+
+The movement finds beauty in the collision between the circular and the linear—the inevitable meeting of orbit and trajectory. Form communicates through pure geometric economy: a single unbroken stroke that simultaneously encodes arc, axis, and aspiration. Nothing is ornamental. Every curve carries structural weight. The result must feel like it was drawn in a single breath by someone who has spent a lifetime studying the relationship between curvature and force.
+
+Space is treated as a participant, not a background. The negative interior of the arc breathes with pressure, held in tension by the line that cuts across it. Scale is absolute—there is no room for ambiguity in the weight of the stroke, the radius of the curve, the height of the rising tail. Every spatial decision is the product of painstaking calibration, the kind of refinement that only becomes invisible when it has been labored over long enough.
+
+Color is monolithic. A single hue on a field of near-black—white like a navigation light in deep sky, warm and precise. The contrast is not decorative; it is functional clarity elevated to philosophy. No gradients. No fills. Only the line, and the dark it inhabits. This chromatic restraint is the result of expert elimination, a deliberate reduction achieved through mastery.
+
+Composition is asymmetric but weighted. The arc dominates the eye and establishes orbital scale; the horizontal thrust of the linear element reorients toward destination; the vertical gesture at the terminus declares arrival and aspiration simultaneously. These three movements—the arc, the axis, the ascent—are timed like a musical phrase: counterpoint that resolves into a single held note. The arrangement should feel discovered, not designed, the result of countless small decisions refined over an enormous span of attention.
+
+The craftsmanship is non-negotiable. Every join in the path, every moment of curvature, every angle of departure must look as though it was drawn by a master navigator mapping an invisible route—meticulous, unhurried, perfect. The work should appear to have required countless hours of refinement: not because it is complex, but because it is exact.
