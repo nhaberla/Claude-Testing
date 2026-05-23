@@ -9,16 +9,23 @@ from scipy.interpolate import CubicSpline
 
 W, H = 260, 280
 
-def smooth_contour(pts, n_out=1200):
-    """Return a smoothed closed curve through pts via periodic cubic spline."""
+def smooth_contour(pts, n_ctrl=60, n_out=1200):
+    """
+    Fit a smooth closed curve through a sparse subset of pts.
+    n_ctrl: how many evenly-spaced control points to keep before spline fitting.
+            Fewer → smoother (staircases averaged away); more → closer to source.
+    """
     pts = np.array(pts, dtype=float)
-    # Cumulative chord length as parameter
+    # Subsample to n_ctrl evenly-spaced points to eliminate pixel staircases
+    idx = np.round(np.linspace(0, len(pts) - 1, n_ctrl)).astype(int)
+    ctrl = pts[idx]
+    # Cumulative chord length parameterisation
     d = [0.0]
-    for i in range(1, len(pts)):
-        d.append(d[-1] + max(np.linalg.norm(pts[i] - pts[i-1]), 1e-9))
+    for i in range(1, len(ctrl)):
+        d.append(d[-1] + max(np.linalg.norm(ctrl[i] - ctrl[i-1]), 1e-9))
     d = np.array(d)
-    csx = CubicSpline(d, pts[:, 0], bc_type='periodic')
-    csy = CubicSpline(d, pts[:, 1], bc_type='periodic')
+    csx = CubicSpline(d, ctrl[:, 0], bc_type='periodic')
+    csy = CubicSpline(d, ctrl[:, 1], bc_type='periodic')
     t = np.linspace(0, d[-1], n_out, endpoint=False)
     return list(zip(csx(t).tolist(), csy(t).tolist()))
 
