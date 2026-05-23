@@ -261,6 +261,7 @@ paths = [contour_to_svg_path(c) for c in [CONTOUR, C1, C4]]
 svg = f"""<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg"
      viewBox="0 0 {W} {H}" width="{W}" height="{H}">
+  <rect width="{W}" height="{H}" fill="white"/>
   {''.join(f'<path d="{p}" fill="black"/>' + chr(10) + '  ' for p in paths)}
 </svg>
 """
