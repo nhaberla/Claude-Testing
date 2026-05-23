@@ -3,85 +3,65 @@ import numpy as np
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
-import matplotlib.patheffects as pe
+from matplotlib.patches import Polygon
 
-# ── Canvas ────────────────────────────────────────────────────────────────────
-BG   = '#07080F'
-INK  = '#FFFFFF'
-DPI  = 400
-W, H = 8, 8          # inches  →  3200 × 3200 px
+BG  = '#07101E'
+FG  = '#FFFFFF'
+DPI = 400
 
-fig = plt.figure(figsize=(W, H), facecolor=BG, dpi=DPI)
+fig = plt.figure(figsize=(8, 8), facecolor=BG, dpi=DPI)
 ax  = fig.add_axes([0, 0, 1, 1], facecolor=BG)
 ax.set_aspect('equal')
 ax.axis('off')
+ax.set_xlim(-1.65, 1.65)
+ax.set_ylim(-1.65, 1.65)
 
-# Shift composition slightly right so the tail fin and globe are visually centred
-OFFSET_X = 0.28
+R     = 1.0   # globe ring radius
+SCALE = 1.08  # plane scale relative to globe
+ANGLE = np.radians(37)  # nose points upper-right
 
-PAD_X = 2.0
-PAD_Y = 1.6
-ax.set_xlim(-PAD_X + OFFSET_X, PAD_X + OFFSET_X)
-ax.set_ylim(-PAD_Y, PAD_Y)
+def rotate(pts, a):
+    pts = np.array(pts, dtype=float)
+    c, s = np.cos(a), np.sin(a)
+    return np.column_stack([pts[:,0]*c - pts[:,1]*s,
+                            pts[:,0]*s + pts[:,1]*c])
 
-# ── Geometry ──────────────────────────────────────────────────────────────────
-R  = 1.0
-LW = 5.2       # refined stroke weight
+# ── Plane silhouette (nose at +x, tail at -x, wings along ±y) ───────────────
+# Shape mirrors the reference: broad swept wings, tapered fuselage, twin tail fins.
+plane_raw = np.array([
+    [ 1.02,  0.00],   # nose tip
+    [ 0.36,  0.13],   # upper body at wing-root leading edge
+    [ 0.02,  0.83],   # upper wing-tip
+    [-0.28,  0.23],   # upper wing trailing edge
+    [-0.56,  0.21],   # upper body rear
+    [-0.64,  0.42],   # upper tail-fin tip
+    [-0.90,  0.00],   # tail tip (center)
+    [-0.64, -0.42],   # lower tail-fin tip
+    [-0.56, -0.21],   # lower body rear
+    [-0.28, -0.23],   # lower wing trailing edge
+    [ 0.02, -0.83],   # lower wing-tip
+    [ 0.36, -0.13],   # lower body at wing-root leading edge
+]) * SCALE
 
-# SEGMENT 1 – orbital arc
-# 300° CCW from 60° → arrives at 60°+300° = 360°=0° = (1,0).
-# Path: upper-right → top → left → bottom → right.
-# Tangent at arrival (1,0) is straight up (+y) → clean 90° pivot into fuselage.
-theta = np.linspace(np.radians(60), np.radians(60 + 300), 3000)
-arc_x = R * np.cos(theta) + OFFSET_X
-arc_y = R * np.sin(theta)
+plane = rotate(plane_raw, ANGLE)
 
-# SEGMENT 2 – fuselage / diameter
-# From (1,0)+offset going LEFT, crossing the full diameter, and extending
-# 0.62 beyond the circle on the left to give the tail fin a clear base.
-TAIL_ROOT_X = -(R + 0.62) + OFFSET_X
-diam_x = np.linspace(R + OFFSET_X, TAIL_ROOT_X, 500)
-diam_y = np.zeros(500)
+# ── Circle ring (globe boundary) ─────────────────────────────────────────────
+t = np.linspace(0, 2*np.pi, 3000)
+cx, cy = R * np.cos(t), R * np.sin(t)
 
-# SEGMENT 3 – tail fin (cubic Bézier)
-# Base at TAIL_ROOT_X, 0. Sweeps rearward (further left) as it rises, then the
-# leading edge rakes forward at the crown — a modern swept stabiliser profile.
-def cubic_bezier(P0, P1, P2, P3, t):
-    t = t[:, None]
-    return (1-t)**3*P0 + 3*(1-t)**2*t*P1 + 3*(1-t)*t**2*P2 + t**3*P3
+# ── Orbital swoosh ────────────────────────────────────────────────────────────
+# Sweeps CCW from lower-right (~-50°) most of the way around to lower-left (~205°),
+# sitting just outside the globe ring.  Rounded caps give it clean tapered ends.
+R_sw  = 1.165
+t_sw  = np.linspace(np.radians(-52), np.radians(208), 2500)
+sx, sy = R_sw * np.cos(t_sw), R_sw * np.sin(t_sw)
 
-t_fin = np.linspace(0, 1, 1000)
-# Tighter, more elegant proportions on the fin
-P0 = np.array([TAIL_ROOT_X,       0.00])
-P1 = np.array([TAIL_ROOT_X-0.18,  0.22])  # rearward lean on entry
-P2 = np.array([TAIL_ROOT_X-0.20,  0.58])  # continued climb
-P3 = np.array([TAIL_ROOT_X+0.22,  0.90])  # tip rakes firmly forward
+# ── Draw: circle ring → plane → swoosh ───────────────────────────────────────
+ax.plot(cx, cy, color=FG, linewidth=5.5, antialiased=True, zorder=2)
+ax.add_patch(Polygon(plane, closed=True, facecolor=FG, edgecolor='none', zorder=3))
+ax.plot(sx, sy, color=FG, linewidth=11.5,
+        solid_capstyle='round', antialiased=True, zorder=4)
 
-fin = cubic_bezier(P0, P1, P2, P3, t_fin)
-
-# ── Assemble single continuous path ───────────────────────────────────────────
-px = np.concatenate([arc_x, diam_x[1:], fin[1:, 0]])
-py = np.concatenate([arc_y, diam_y[1:], fin[1:, 1]])
-
-# ── Render ────────────────────────────────────────────────────────────────────
-# Three-layer rendering: outer glow → soft halo → crisp ink line
-# The glow gives the line presence without compromising the minimalist aesthetic.
-ax.plot(px, py,
-        color='#D0D8FF', linewidth=LW * 5.5, alpha=0.030,
-        solid_capstyle='round', solid_joinstyle='round',
-        antialiased=True, zorder=1)
-
-ax.plot(px, py,
-        color='#E8EEFF', linewidth=LW * 2.2, alpha=0.10,
-        solid_capstyle='round', solid_joinstyle='round',
-        antialiased=True, zorder=2)
-
-ax.plot(px, py,
-        color=INK, linewidth=LW,
-        solid_capstyle='round', solid_joinstyle='round',
-        antialiased=True, zorder=3)
-
-# ── Export ────────────────────────────────────────────────────────────────────
 out = '/home/user/Claude-Testing/logo.png'
 fig.savefig(out, dpi=DPI, facecolor=BG, bbox_inches='tight', pad_inches=0.18)
 plt.close(fig)
