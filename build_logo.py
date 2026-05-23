@@ -4,7 +4,6 @@ Renders the airliner silhouette traced directly from IMG_3775.png.
 Uses the full 779-point contour (skimage.find_contours) in native pixel
 coordinates of the target (260×280), drawn at 4× scale then downsampled.
 """
-from PIL import Image, ImageDraw
 import numpy as np
 from scipy.interpolate import CubicSpline
 
@@ -242,15 +241,24 @@ C4 = [
     (155.5,160.0),(155.0,160.5),
 ]
 
-SCALE = 8   # higher scale → smoother anti-aliased edges after downsampling
-img_big = Image.new('L', (W * SCALE, H * SCALE), 255)
-draw = ImageDraw.Draw(img_big)
-for contour in [CONTOUR, C1, C4]:
-    smoothed = smooth_contour(contour)
-    scaled = [(c * SCALE, r * SCALE) for c, r in smoothed]
-    draw.polygon(scaled, fill=0)
+def contour_to_svg_path(pts, n_out=400):
+    """Convert contour points to an SVG path string via smooth cubic spline."""
+    xy = np.array(smooth_contour(pts, n_out=n_out))
+    d = f"M {xy[0,0]:.3f},{xy[0,1]:.3f} "
+    d += " ".join(f"L {x:.3f},{y:.3f}" for x, y in xy[1:])
+    d += " Z"
+    return d
 
-img_out = img_big.resize((W, H), Image.LANCZOS).convert('RGB')
-out = '/home/user/Claude-Testing/logo.png'
-img_out.save(out)
-print(f'Saved → {out}  ({W}×{H} px)')
+paths = [contour_to_svg_path(c) for c in [CONTOUR, C1, C4]]
+
+svg = f"""<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg"
+     viewBox="0 0 {W} {H}" width="{W}" height="{H}">
+  {''.join(f'<path d="{p}" fill="black"/>' + chr(10) + '  ' for p in paths)}
+</svg>
+"""
+
+out = '/home/user/Claude-Testing/logo.svg'
+with open(out, 'w') as f:
+    f.write(svg)
+print(f'Saved → {out}')
