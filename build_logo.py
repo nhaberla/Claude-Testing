@@ -9,17 +9,67 @@ from scipy.interpolate import CubicSpline
 
 W, H = 260, 280
 
-def smooth_contour(pts, n_ctrl=60, n_out=1200):
-    """
-    Fit a smooth closed curve through a sparse subset of pts.
-    n_ctrl: how many evenly-spaced control points to keep before spline fitting.
-            Fewer → smoother (staircases averaged away); more → closer to source.
-    """
+def rdp_simplify(pts, epsilon):
+    """Ramer-Douglas-Peucker simplification of an open polyline."""
+    if len(pts) < 3:
+        return pts
+    start, end = pts[0], pts[-1]
+    seg = end - start
+    seg_len = np.linalg.norm(seg)
+    if seg_len == 0:
+        dists = np.linalg.norm(pts - start, axis=1)
+    else:
+        # 2-D perpendicular distance from each point to the start-end line
+        dists = np.abs((seg[0]) * (pts - start)[:, 1] - (seg[1]) * (pts - start)[:, 0]) / seg_len
+    idx = int(np.argmax(dists))
+    if dists[idx] > epsilon:
+        left  = rdp_simplify(pts[:idx+1], epsilon)
+        right = rdp_simplify(pts[idx:],   epsilon)
+        return np.vstack([left[:-1], right])
+    else:
+        return np.array([start, end])
+
+def simplify_closed(pts, epsilon):
+    """RDP on a closed contour: split at the two farthest-apart points."""
     pts = np.array(pts, dtype=float)
-    # Subsample to n_ctrl evenly-spaced points to eliminate pixel staircases
-    idx = np.round(np.linspace(0, len(pts) - 1, n_ctrl)).astype(int)
-    ctrl = pts[idx]
-    # Cumulative chord length parameterisation
+    n = len(pts)
+    # Find the pair of points farthest apart — use them as the split seam
+    # (cheap O(n) approximation: farthest from point 0, then farthest from that)
+    d0 = np.linalg.norm(pts - pts[0], axis=1)
+    i1 = int(np.argmax(d0))
+    d1 = np.linalg.norm(pts - pts[i1], axis=1)
+    i2 = int(np.argmax(d1))
+    # Split into two open arcs and simplify each
+    if i2 < i1:
+        i1, i2 = i2, i1
+    arc1 = rdp_simplify(pts[i1:i2+1], epsilon)
+    arc2 = rdp_simplify(np.vstack([pts[i2:], pts[:i1+1]]), epsilon)
+    combined = np.vstack([arc1[:-1], arc2[:-1]])
+    return combined.tolist()
+
+def gauss_smooth_closed(pts, sigma=2.0):
+    """Gaussian-smooth a closed contour by wrapping and convolving."""
+    from scipy.ndimage import uniform_filter1d
+    from scipy.ndimage import gaussian_filter1d
+    pts = np.array(pts, dtype=float)
+    n = len(pts)
+    # Tile 3× to handle wrap-around, then take middle third
+    tiled = np.tile(pts, (3, 1))
+    sx = gaussian_filter1d(tiled[:, 0], sigma=sigma)[n:2*n]
+    sy = gaussian_filter1d(tiled[:, 1], sigma=sigma)[n:2*n]
+    return np.column_stack([sx, sy])
+
+def smooth_contour(pts, epsilon=0.5, sigma=1.5, n_out=1200):
+    """
+    1. Gaussian-smooth the raw pixel contour (kills staircase noise).
+    2. RDP-simplify the smoothed curve (keeps corners, drops straight runs).
+    3. Fit a periodic cubic spline through the survivors.
+    """
+    smoothed = gauss_smooth_closed(pts, sigma=sigma)
+    ctrl = np.array(simplify_closed(smoothed.tolist(), epsilon), dtype=float)
+    # Close the loop so the periodic spline sees identical endpoints
+    ctrl = np.vstack([ctrl, ctrl[:1]])
+    # Cumulative chord-length parameterisation
     d = [0.0]
     for i in range(1, len(ctrl)):
         d.append(d[-1] + max(np.linalg.norm(ctrl[i] - ctrl[i-1]), 1e-9))
@@ -248,9 +298,9 @@ C4 = [
     (155.5,160.0),(155.0,160.5),
 ]
 
-def contour_to_svg_path(pts, n_out=400):
+def contour_to_svg_path(pts, n_out=400, epsilon=0.35):
     """Convert contour points to an SVG path string via smooth cubic spline."""
-    xy = np.array(smooth_contour(pts, n_out=n_out))
+    xy = np.array(smooth_contour(pts, epsilon=epsilon, n_out=n_out))
     d = f"M {xy[0,0]:.3f},{xy[0,1]:.3f} "
     d += " ".join(f"L {x:.3f},{y:.3f}" for x, y in xy[1:])
     d += " Z"
