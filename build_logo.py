@@ -348,12 +348,79 @@ def catmull_rom_to_svg(pts, alpha=0.5):
     d += " Z"
     return d
 
+def max_chord_deviation(smoothed_pts, i_start, i_end):
+    """Max perpendicular distance from the chord (ctrl[i] → ctrl[i+1])
+    to the smoothed contour points between those two indices."""
+    seg = smoothed_pts[i_end] - smoothed_pts[i_start]
+    seg_len = np.linalg.norm(seg)
+    if seg_len < 1e-9:
+        return 0.0
+    sub = smoothed_pts[i_start:i_end+1]
+    dists = np.abs(seg[0]*(sub - smoothed_pts[i_start])[:,1]
+                 - seg[1]*(sub - smoothed_pts[i_start])[:,0]) / seg_len
+    return float(dists.max())
+
+def adaptive_contour_to_svg(raw_pts, epsilon=0.5, sigma=1.5, straight_thresh=0.6):
+    """
+    Build an SVG path where each segment is either a straight line or a
+    Catmull-Rom bezier, chosen per-segment:
+      - straight if the smoothed contour deviates < straight_thresh px from
+        the chord between the two RDP control points
+      - Catmull-Rom curve otherwise
+    """
+    smoothed = gauss_smooth_closed(raw_pts, sigma=sigma)
+    ctrl = np.array(simplify_closed(smoothed.tolist(), epsilon), dtype=float)
+    n = len(ctrl)
+
+    # For each ctrl point, find its nearest index in smoothed
+    def nearest_idx(pt, arr):
+        return int(np.argmin(np.linalg.norm(arr - pt, axis=1)))
+
+    sm = smoothed
+    ctrl_idx = [nearest_idx(p, sm) for p in ctrl]
+
+    # Precompute Catmull-Rom bezier control handles for every segment
+    def catmull_handles(i):
+        p0 = ctrl[(i-1) % n]
+        p1 = ctrl[i]
+        p2 = ctrl[(i+1) % n]
+        p3 = ctrl[(i+2) % n]
+        alpha = 0.5
+        def tj(ti, a, b):
+            return ti + np.linalg.norm(b-a)**alpha
+        t0=0.; t1=tj(t0,p0,p1); t2=tj(t1,p1,p2); t3=tj(t2,p2,p3)
+        c1 = (t2-t1)*((p1-p0)/max(t1-t0,1e-9)-(p2-p0)/max(t2-t0,1e-9)+(p2-p1)/max(t2-t1,1e-9))
+        c2 = (t2-t1)*((p2-p1)/max(t2-t1,1e-9)-(p3-p1)/max(t3-t1,1e-9)+(p3-p2)/max(t3-t2,1e-9))
+        return p1+c1/3., p2-c2/3.
+
+    # Build path
+    d = f"M {ctrl[0,0]:.3f},{ctrl[0,1]:.3f}"
+    for i in range(n):
+        j = (i+1) % n
+        # Sample smoothed contour between ctrl[i] and ctrl[j]
+        si, sj = ctrl_idx[i], ctrl_idx[j]
+        if sj <= si:  # wrap-around
+            seg_pts = np.vstack([sm[si:], sm[:sj+1]])
+        else:
+            seg_pts = sm[si:sj+1]
+        dev = max_chord_deviation(seg_pts, 0, len(seg_pts)-1) if len(seg_pts) > 2 else 0.0
+        p2 = ctrl[j]
+        if dev < straight_thresh:
+            d += f" L {p2[0]:.3f},{p2[1]:.3f}"
+        else:
+            cp1, cp2 = catmull_handles(i)
+            d += (f" C {cp1[0]:.3f},{cp1[1]:.3f}"
+                  f" {cp2[0]:.3f},{cp2[1]:.3f}"
+                  f" {p2[0]:.3f},{p2[1]:.3f}")
+    d += " Z"
+    return d
+
 def contour_to_svg_path(pts, epsilon=0.5, sigma=1.5):
     smoothed = gauss_smooth_closed(pts, sigma=sigma)
     ctrl = simplify_closed(smoothed.tolist(), epsilon)
     return catmull_rom_to_svg(ctrl)
 
-paths = [contour_to_svg_path(c, epsilon=0.5, sigma=1.5) for c in [CONTOUR, C1, C4]]
+paths = [adaptive_contour_to_svg(c, epsilon=0.5, sigma=1.5, straight_thresh=0.6) for c in [CONTOUR, C1, C4]]
 
 svg = f"""<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg"
