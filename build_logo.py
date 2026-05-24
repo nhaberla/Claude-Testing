@@ -298,15 +298,62 @@ C4 = [
     (155.5,160.0),(155.0,160.5),
 ]
 
-def contour_to_svg_path(pts, n_out=400, epsilon=0.35):
-    """Convert contour points to an SVG path string via smooth cubic spline."""
-    xy = np.array(smooth_contour(pts, epsilon=epsilon, n_out=n_out))
-    d = f"M {xy[0,0]:.3f},{xy[0,1]:.3f} "
-    d += " ".join(f"L {x:.3f},{y:.3f}" for x, y in xy[1:])
+def catmull_rom_to_svg(pts, alpha=0.5):
+    """
+    Convert a closed set of control points to an SVG path using Catmull-Rom
+    splines (converted to cubic Bezier). Catmull-Rom is local — each segment
+    only looks at its two neighbours — so there is no oscillation between
+    sparse points.
+    alpha: 0.5 = centripetal (prevents cusps/loops), 1.0 = chordal
+    """
+    pts = np.array(pts, dtype=float)
+    n = len(pts)
+
+    def tj(ti, pi, pj):
+        d = np.linalg.norm(pj - pi)
+        return ti + d ** alpha
+
+    # Build cubic bezier control points for each segment i→i+1
+    segs = []
+    for i in range(n):
+        p0 = pts[(i - 1) % n]
+        p1 = pts[i]
+        p2 = pts[(i + 1) % n]
+        p3 = pts[(i + 2) % n]
+
+        t0 = 0.0
+        t1 = tj(t0, p0, p1)
+        t2 = tj(t1, p1, p2)
+        t3 = tj(t2, p2, p3)
+
+        # Catmull-Rom tangent at p1 and p2
+        c1 = (t2 - t1) * ((p1 - p0) / max(t1 - t0, 1e-9) -
+                           (p2 - p0) / max(t2 - t0, 1e-9) +
+                           (p2 - p1) / max(t2 - t1, 1e-9))
+        c2 = (t2 - t1) * ((p2 - p1) / max(t2 - t1, 1e-9) -
+                           (p3 - p1) / max(t3 - t1, 1e-9) +
+                           (p3 - p2) / max(t3 - t2, 1e-9))
+
+        cp1 = p1 + c1 / 3.0
+        cp2 = p2 - c2 / 3.0
+        segs.append((p1, cp1, cp2, p2))
+
+    # Emit SVG path
+    p_start = segs[0][0]
+    d = f"M {p_start[0]:.3f},{p_start[1]:.3f}"
+    for _, cp1, cp2, p2 in segs:
+        d += (f" C {cp1[0]:.3f},{cp1[1]:.3f}"
+              f" {cp2[0]:.3f},{cp2[1]:.3f}"
+              f" {p2[0]:.3f},{p2[1]:.3f}")
     d += " Z"
     return d
 
-paths = [contour_to_svg_path(c) for c in [CONTOUR, C1, C4]]
+def contour_to_svg_path(pts, epsilon=0.5, sigma=1.5):
+    smoothed = gauss_smooth_closed(pts, sigma=sigma)
+    ctrl = simplify_closed(smoothed.tolist(), epsilon)
+    return catmull_rom_to_svg(ctrl)
+
+paths = [contour_to_svg_path(c, epsilon=0.5, sigma=1.5) for c in [CONTOUR, C1, C4]]
 
 svg = f"""<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg"
