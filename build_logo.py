@@ -420,7 +420,47 @@ def contour_to_svg_path(pts, epsilon=0.5, sigma=1.5):
     ctrl = simplify_closed(smoothed.tolist(), epsilon)
     return catmull_rom_to_svg(ctrl)
 
-paths = [adaptive_contour_to_svg(c, epsilon=0.5, sigma=1.5, straight_thresh=0.6) for c in [CONTOUR, C1, C4]]
+def arc_chord_ratio(sm, si, sj):
+    sp = np.vstack([sm[si:], sm[:sj+1]]) if sj <= si else sm[si:sj+1]
+    chord = np.linalg.norm(sp[-1] - sp[0])
+    arc   = float(np.sum(np.linalg.norm(np.diff(sp, axis=0), axis=1)))
+    return arc / chord if chord > 1e-9 else 1.0
+
+def adaptive_contour_to_svg(raw_pts, epsilon=0.5, sigma=1.5, arc_thresh=1.010):
+    """
+    Per-segment: use arc/chord ratio to decide straight line vs Catmull-Rom.
+    arc/chord close to 1.0 → the smoothed contour barely curves → straight line.
+    arc/chord > arc_thresh  → genuine curve → Catmull-Rom bezier.
+    """
+    smoothed = gauss_smooth_closed(raw_pts, sigma=sigma)
+    ctrl = np.array(simplify_closed(smoothed.tolist(), epsilon), dtype=float)
+    n = len(ctrl)
+    ctrl_idx = [int(np.argmin(np.linalg.norm(smoothed - p, axis=1))) for p in ctrl]
+
+    def catmull_handles(i):
+        p0,p1,p2,p3=ctrl[(i-1)%n],ctrl[i],ctrl[(i+1)%n],ctrl[(i+2)%n]
+        alpha=0.5
+        def tj(ti,a,b): return ti+np.linalg.norm(b-a)**alpha
+        t0=0.; t1=tj(t0,p0,p1); t2=tj(t1,p1,p2); t3=tj(t2,p2,p3)
+        c1=(t2-t1)*((p1-p0)/max(t1-t0,1e-9)-(p2-p0)/max(t2-t0,1e-9)+(p2-p1)/max(t2-t1,1e-9))
+        c2=(t2-t1)*((p2-p1)/max(t2-t1,1e-9)-(p3-p1)/max(t3-t1,1e-9)+(p3-p2)/max(t3-t2,1e-9))
+        return p1+c1/3., p2-c2/3.
+
+    d = f"M {ctrl[0,0]:.3f},{ctrl[0,1]:.3f}"
+    for i in range(n):
+        j = (i+1) % n
+        ratio = arc_chord_ratio(smoothed, ctrl_idx[i], ctrl_idx[j])
+        p2 = ctrl[j]
+        if ratio < arc_thresh:
+            d += f" L {p2[0]:.3f},{p2[1]:.3f}"
+        else:
+            cp1, cp2 = catmull_handles(i)
+            d += (f" C {cp1[0]:.3f},{cp1[1]:.3f}"
+                  f" {cp2[0]:.3f},{cp2[1]:.3f}"
+                  f" {p2[0]:.3f},{p2[1]:.3f}")
+    return d + " Z"
+
+paths = [adaptive_contour_to_svg(c, epsilon=0.5, sigma=1.5, arc_thresh=1.010) for c in [CONTOUR, C1, C4]]
 
 svg = f"""<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg"
